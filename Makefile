@@ -10,7 +10,10 @@
 data/%.db: data/%.jsonl make-gloss-db | .venv/.installed
 	./make-gloss-db $< $@
 
+.PHONY: clean compile
+
 clean:
 	rm -rf .venv data/*.db data/*.db-shm data/*.db-wal
 
-.PHONY: clean
+compile:
+	$(EMACS) --batch -f batch-byte-compile gloss.el

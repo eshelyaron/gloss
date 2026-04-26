@@ -92,9 +92,19 @@
      (lambda (pattern _point)
        (gloss--word-completions pattern db))
      `((affixation-function
-        . ,(completion-make-affixation-function
-            nil (lambda (cand) (get-text-property 0 'hint cand))))
-       (sort-function . identity)))))
+        . ,(lambda (cs)
+             (let ((max (seq-max (cons 0 (mapcar #'string-width cs)))))
+               (mapcar
+                (lambda (c)
+                  (list
+                   c ""
+                   (if-let* ((hint (get-text-property 0 'hint c)))
+                       (concat (make-string (1+ (- max (string-width c))) ?\s)
+                               (propertize hint 'face 'completions-annotations))
+                     "")))
+                cs))))
+       (display-sort-function . identity)
+       (cycle-sort-function . identity)))))
 
 (defun gloss--word-completions (word db)
   "Return completions for WORD from database DB."
@@ -107,10 +117,11 @@
     db "SELECT word, hint FROM words WHERE word LIKE ? ORDER BY freq DESC"
     (list (concat word "%")))))
 
-(define-button-type 'gloss-word-xref
-  :supertype 'help-xref
-  'help-function #'gloss-describe-word
-  'help-echo "mouse-2, RET: look up this word")
+(with-eval-after-load 'help-mode
+  (define-button-type 'gloss-word-xref
+    :supertype 'help-xref
+    'help-function #'gloss-describe-word
+    'help-echo "mouse-2, RET: look up this word"))
 
 (defun gloss--format-forms (forms-json)
   "Parse FORMS-JSON and return a display string, or nil if nothing useful."
@@ -146,7 +157,7 @@ DICTIONARY is the name of the source dictionary, used for xref buttons."
         (setq i (1+ i))))
     (when (and ipa (not (string-empty-p ipa)))
       (insert "  Pronunciation: " ipa "\n"))
-    (when-let ((forms-str (gloss--format-forms forms-json)))
+    (when-let* ((forms-str (gloss--format-forms forms-json)))
       (insert "  Forms: " forms-str "\n"))
     (when (and synonyms-json (not (string-empty-p synonyms-json)))
       (let ((syns (json-parse-string synonyms-json :array-type 'list)))
@@ -192,7 +203,7 @@ Optional argument INTERACTIVE is non-nil for interactive calls."
                              (cons (lambda (str)
                                      (gloss-describe-word str dict))
                                    "define")))
-             (completing-read-case-insensitive
+             (completing-read
               (format-prompt "Word[%s]" def dict)
               (gloss--word-table dict) nil t nil
               (intern (format "gloss-describe-word-%s-history" dict))
