@@ -44,18 +44,23 @@ def main():
 
     print(f"Importing {jsonl_path}", file=sys.stderr)
 
+    n = 0
     with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
-            if line.strip():
-                word_row, entry_row = _transform(json.loads(line))
-                if not word_row[0] or not word_row[0].isalpha():
-                    continue
-                con.execute("INSERT OR IGNORE INTO words VALUES (?,?,?)", word_row)
-                con.execute("INSERT INTO entries VALUES (?,?,?,?,?,?,?,?)", entry_row)
+            if not line.strip():
+                continue
+            word_row, entry_row = _transform(json.loads(line))
+            if not word_row[0] or not word_row[0].isalpha():
+                continue
+            con.execute("INSERT OR IGNORE INTO words VALUES (?,?,?)", word_row)
+            con.execute("INSERT INTO entries VALUES (?,?,?,?,?,?,?,?)", entry_row)
+            n += 1
+            if n % 100_000 == 0:
+                print(f"  {n:,} entries...", file=sys.stderr)
 
     con.commit()
     con.close()
-    print("Done.", file=sys.stderr)
+    print(f"Done ({n:,} entries).", file=sys.stderr)
 
 
 def _transform(e):

@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release under
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-databases:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Download English JSONL
+        run: |
+          mkdir -p data
+          curl -L -o data/en.jsonl \
+            https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl
+
+      - name: Build databases
+        run: make data/en.db
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          gh release create "$tag" \
+            --title "gloss $tag" \
+            --notes "Pre-built dictionary databases." \
+            2>/dev/null || true
+          gh release upload "$tag" data/en.db --clobber

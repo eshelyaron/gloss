@@ -55,16 +55,31 @@
   "Dictionary to use by default for definition lookup and word completion."
   :type 'string)
 
+(defcustom gloss-english-db-url
+  "https://github.com/eshelyaron/gloss/releases/latest/download/en.db"
+  "URL from which `gloss-setup-english' downloads pre-built English database."
+  :type 'string)
+
 (defvar gloss-read-dictionary-history nil)
 
 (defvar gloss--connections (make-hash-table :test #'equal))
+
+(defvar gloss--prompted nil
+  "List of dictionaries for which a missing-database prompt has been shown.")
 
 (defun gloss--db (dictionary)
   "Return an open SQLite handle for DICTIONARY, opening it if needed."
   (or (gethash dictionary gloss--connections)
       (let ((path (expand-file-name (concat dictionary ".db") gloss-data-directory)))
         (unless (file-exists-p path)
-          (error "No database for dictionary `%s'" dictionary))
+          (if (and (equal dictionary "en")
+                   (not (member dictionary gloss--prompted))
+                   (push dictionary gloss--prompted)
+                   (y-or-n-p "No database for dictionary `en'.  Download it now? "))
+              (progn
+                (gloss-setup-english)
+                (user-error "Download started; try again once it completes"))
+            (error "No database for dictionary `%s'" dictionary)))
         (puthash dictionary (sqlite-open path) gloss--connections))))
 
 (defun gloss-dictionaries ()
@@ -227,7 +242,7 @@ Intended for use in `eldoc-documentation-functions'.
 Looks up the word at point in `gloss-default-dictionary' and calls
 CALLBACK with a one-line hint if a match is found."
   (when-let* ((wap (thing-at-point 'word t))
-              (db (ignore-errors (gloss--db gloss-default-dictionary)))
+              (db (gloss--db gloss-default-dictionary))
               (hit (car (sqlite-select
                          db "SELECT word, hint FROM words WHERE word LIKE ? LIMIT 1"
                          (list wap))))
@@ -244,6 +259,28 @@ Intended for use in `completion-at-point-functions'."
     (`(,beg . ,end)
      (when (and (< beg (point)) (<= (point) end))
        (list beg end (gloss--word-table) :exclusive 'no)))))
+
+;;;###autoload
+(defun gloss-setup-english ()
+  "Download the pre-built English dictionary database.
+Fetches en.db from `gloss-english-db-url' into the gloss data directory."
+  (interactive)
+  (let ((curl (executable-find "curl")))
+    (unless curl
+      (user-error "`curl' not found; download %s into %s manually"
+                  gloss-english-db-url gloss-data-directory))
+    (make-directory gloss-data-directory t)
+    (message "Downloading English database...")
+    (set-process-sentinel
+     (start-process "gloss-setup" "*gloss setup*"
+                    curl "-L" "-o"
+                    (expand-file-name "en.db" gloss-data-directory)
+                    gloss-english-db-url)
+     (lambda (proc _event)
+       (if (zerop (process-exit-status proc))
+           (message "English database ready.")
+         (message "gloss-setup-english failed; see buffer `%s' for details"
+                  (buffer-name (process-buffer proc))))))))
 
 (provide 'gloss)
 ;;; gloss.el ends here
