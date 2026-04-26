@@ -78,7 +78,7 @@
                    (y-or-n-p "No database for dictionary `en'.  Download it now? "))
               (progn
                 (gloss-setup-english)
-                (user-error "Download started; try again once it completes"))
+                (user-error "Download started (see buffer `*gloss setup*'); try again once it completes"))
             (error "No database for dictionary `%s'" dictionary)))
         (puthash dictionary (sqlite-open path) gloss--connections))))
 
