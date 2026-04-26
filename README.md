@@ -15,21 +15,22 @@ database.
 
 ### 1. Get dictionary data
 
-Download a Wiktextract JSONL dump for the language you want.  For English:
+For English, run `M-x gloss-setup-english` to download a pre-built SQLite
+database directly into the package's data directory.  Alternatively, gloss
+will offer to do this automatically the first time you invoke
+`gloss-describe-word` with no database in place.
+
+To build a database yourself, or for languages other than English, download
+a Wiktextract JSONL dump from https://kaikki.org/ and run:
 
     curl -o data/en.jsonl https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl
-
-Dumps for other languages are available at https://kaikki.org/
-
-### 2. Build the database
-
     make data/en.db
 
-This creates a Python virtual environment, installs the `wordfreq` library,
-and builds a SQLite database from the JSONL file.  Subsequent `make` runs
-only rebuild the database if the JSONL file has changed.
+`make` creates a Python virtual environment, installs the `wordfreq` library,
+and builds a SQLite database from the JSONL file.  Subsequent runs only
+rebuild if the JSONL file has changed.
 
-### 3. Configure Emacs
+### 2. Configure Emacs
 
 ```elisp
 ;; Set the default dictionary (basename of the .db file under data/).
