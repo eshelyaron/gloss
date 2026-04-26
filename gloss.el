@@ -3,7 +3,11 @@
 ;; Copyright (C) 2026  Eshel Yaron
 
 ;; Author: Eshel Yaron <me@eshelyaron.com>
+;; Maintainer: Eshel Yaron <me@eshelyaron.com>
 ;; Keywords: languages
+;; URL: https://git.sr.ht/~eshel/gloss
+;; Package-Version: 0.1.0
+;; Package-Requires: ((emacs "30.1"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -21,23 +25,19 @@
 ;;; Commentary:
 
 ;; This library provides dictionary lookup backed by Wiktextract data
-;; stored in a local SQLite database.  Before using it, build a database
-;; with the `make-gloss-db' script; see the Makefile for details.  JSONL
-;; dumps for many languages are available from https://kaikki.org/.
+;; stored in a local SQLite database.
 ;;
-;; The main entry point is `gloss-describe-word', which prompts for a word
-;; with frequency-ranked completion and displays its definitions, IPA
-;; pronunciation, inflected forms and synonyms in a Help buffer.  Set
-;; `gloss-default-dictionary' to select which database to use (it defaults
-;; to "en", meaning `data/en.db' relative to this file).
+;; The main entry point is `gloss-describe-word', which prompts for a
+;; word with frequency-ranked completion and displays its definitions,
+;; IPA pronunciation, inflected forms and synonyms in a Help buffer.
+;; Set `gloss-default-dictionary' to select which database to use, or
+;; call `gloss-describe-word' with a prefix argument.
 ;;
 ;; `gloss-completion-at-point' is a `completion-at-point-functions'
 ;; function that completes the word at point against the dictionary.
-;; Add it to the hook in whichever modes you want it active.
 ;;
 ;; `gloss-eldoc' is an `eldoc-documentation-functions' function that
-;; shows a brief sense for the word at point in the echo area.  Add it
-;; to the hook likewise.
+;; shows a brief sense for the word at point in the echo area.
 
 ;;; Code:
 
@@ -229,7 +229,7 @@ CALLBACK with a one-line hint if a match is found."
   (when-let* ((wap (thing-at-point 'word t))
               (db (ignore-errors (gloss--db gloss-default-dictionary)))
               (hit (car (sqlite-select
-                         db "SELECT word, hint FROM words WHERE word LIKE ? limit 1"
+                         db "SELECT word, hint FROM words WHERE word LIKE ? LIMIT 1"
                          (list wap))))
               (word (car hit))
               (hint (cadr hit)))
