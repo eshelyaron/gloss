@@ -1,0 +1,101 @@
+#!/usr/bin/env .venv/bin/python3
+# make-gloss-db -- build a SQLite dictionary DB from a Wiktextract JSONL file
+#
+# Usage: make-gloss-db <input.jsonl> <output.db>
+
+import json
+import os
+import sqlite3
+import sys
+
+from wordfreq import word_frequency
+
+def main():
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <input.jsonl> <output.db>", file=sys.stderr)
+        sys.exit(1)
+
+    jsonl_path, db_path = sys.argv[1], sys.argv[2]
+
+    print(f"Creating schema in {db_path}", file=sys.stderr)
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    con = sqlite3.connect(db_path)
+    con.executescript("""
+        CREATE TABLE words (
+            word TEXT PRIMARY KEY,
+            freq REAL,
+            hint TEXT
+        );
+        CREATE INDEX words_word ON words(word COLLATE NOCASE);
+        CREATE TABLE entries (
+            word      TEXT NOT NULL REFERENCES words(word),
+            pos       TEXT,
+            lang_code TEXT,
+            glosses   TEXT,
+            etymology TEXT,
+            ipa       TEXT,
+            forms     TEXT,
+            synonyms  TEXT
+        );
+        CREATE INDEX entries_word ON entries(word COLLATE NOCASE);
+    """)
+
+    print(f"Importing {jsonl_path}", file=sys.stderr)
+
+    with open(jsonl_path, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                word_row, entry_row = _transform(json.loads(line))
+                if not word_row[0] or not word_row[0].isalpha():
+                    continue
+                con.execute("INSERT OR IGNORE INTO words VALUES (?,?,?)", word_row)
+                con.execute("INSERT INTO entries VALUES (?,?,?,?,?,?,?,?)", entry_row)
+
+    con.commit()
+    con.close()
+    print("Done.", file=sys.stderr)
+
+
+def _transform(e):
+    word      = e.get("word") or ""
+    pos       = e.get("pos") or ""
+    lang_code = e.get("lang_code") or ""
+
+    glosses_list = [
+        g for s in e.get("senses", [])
+        if (g := (s.get("glosses") or [""])[-1])
+    ]
+    glosses = json.dumps(glosses_list)
+    hint    = glosses_list[0] if glosses_list else ""
+
+    etymology = e.get("etymology_text") or ""
+
+    ipa = next(
+        (s["ipa"] for s in e.get("sounds", []) if "ipa" in s),
+        "",
+    )
+
+    forms = json.dumps([
+        {"form": f["form"], "tags": f.get("tags", [])}
+        for f in e.get("forms", [])
+    ])
+
+    synonyms = json.dumps(list(dict.fromkeys(
+        s["word"]
+        for sense in e.get("senses", [])
+        for s in sense.get("synonyms", [])
+        if "word" in s
+    )))
+
+    freq = word_frequency(word, lang_code) if word and lang_code else 0.0
+
+    word_row  = (word, freq, hint)
+    entry_row = (word, pos, lang_code, glosses, etymology, ipa, forms, synonyms)
+
+    return word_row, entry_row
+
+
+if __name__ == "__main__":
+    main()

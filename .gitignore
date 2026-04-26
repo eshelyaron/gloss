@@ -1,0 +1,3 @@
+/data/*.jsonl
+/data/*.db
+/data/*.db-journal
