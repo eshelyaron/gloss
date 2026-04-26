@@ -270,17 +270,21 @@ Fetches en.db from `gloss-english-db-url' into the gloss data directory."
       (user-error "`curl' not found; download %s into %s manually"
                   gloss-english-db-url gloss-data-directory))
     (make-directory gloss-data-directory t)
-    (message "Downloading English database...")
-    (set-process-sentinel
-     (start-process "gloss-setup" "*gloss setup*"
-                    curl "-L" "-o"
+    (message "Downloading English database (see buffer `*gloss setup*' for progress)...")
+    (make-process
+     :name "gloss-setup"
+     :buffer "*gloss setup*"
+     :command (list curl "-L" "-o"
                     (expand-file-name "en.db" gloss-data-directory)
                     gloss-english-db-url)
-     (lambda (proc _event)
-       (if (zerop (process-exit-status proc))
-           (message "English database ready.")
-         (message "gloss-setup-english failed; see buffer `%s' for details"
-                  (buffer-name (process-buffer proc))))))))
+     :filter (lambda (proc string)
+               (with-current-buffer (process-buffer proc)
+                 (insert (string-replace "\r" "\n" string))))
+     :sentinel (lambda (proc _event)
+                 (if (zerop (process-exit-status proc))
+                     (message "English database ready.")
+                   (message "gloss-setup-english failed; see buffer `%s' for details"
+                            (buffer-name (process-buffer proc))))))))
 
 (provide 'gloss)
 ;;; gloss.el ends here
