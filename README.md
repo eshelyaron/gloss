@@ -15,13 +15,14 @@ database.
 
 ### 1. Get dictionary data
 
-For English, run `M-x gloss-setup-english` to download a pre-built SQLite
-database directly into the package's data directory.  Alternatively, gloss
-will offer to do this automatically the first time you invoke
+Run `M-x gloss-download-prebuilt-db` to download a pre-built SQLite database
+directly into the package's data directory.  Pre-built databases are available
+for English, Dutch, French, German and Italian.  Alternatively, gloss will
+offer to download one automatically the first time you invoke
 `gloss-describe-word` with no database in place.
 
-To build a database yourself, or for languages other than English, download
-a Wiktextract JSONL dump from https://kaikki.org/ and run:
+To build a database yourself, download a Wiktextract JSONL dump from
+https://kaikki.org/ and run `make data/<LANGUAGE CODE>.db`, e.g.:
 
     curl -o data/en.jsonl https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl
     make data/en.db

@@ -38,6 +38,10 @@
 ;;
 ;; `gloss-eldoc' is an `eldoc-documentation-functions' function that
 ;; shows a brief sense for the word at point in the echo area.
+;;
+;; `gloss-download-prebuilt-db' downloads a pre-built database for a
+;; given language; pre-built databases are available for English, Dutch,
+;; French, German and Italian.
 
 ;;; Code:
 
@@ -55,10 +59,14 @@
   "Dictionary to use by default for definition lookup and word completion."
   :type 'string)
 
-(defcustom gloss-english-db-url
-  "https://github.com/eshelyaron/gloss/releases/latest/download/en.db"
-  "URL from which `gloss-setup-english' downloads pre-built English database."
-  :type 'string)
+(defcustom gloss-prebuilt-db-urls
+  '(("en" . "https://github.com/eshelyaron/gloss/releases/latest/download/en.db")
+    ("nl" . "https://github.com/eshelyaron/gloss/releases/latest/download/nl.db")
+    ("fr" . "https://github.com/eshelyaron/gloss/releases/latest/download/fr.db")
+    ("de" . "https://github.com/eshelyaron/gloss/releases/latest/download/de.db")
+    ("it" . "https://github.com/eshelyaron/gloss/releases/latest/download/it.db"))
+  "Alist mapping dictionary names to pre-built database download URLs."
+  :type '(alist :key-type string :value-type string))
 
 (defvar gloss-read-dictionary-history nil)
 
@@ -72,12 +80,12 @@
   (or (gethash dictionary gloss--connections)
       (let ((path (expand-file-name (concat dictionary ".db") gloss-data-directory)))
         (unless (file-exists-p path)
-          (if (and (equal dictionary "en")
+          (if (and (assoc dictionary gloss-prebuilt-db-urls)
                    (not (member dictionary gloss--prompted))
                    (push dictionary gloss--prompted)
-                   (y-or-n-p "No database for dictionary `en'.  Download it now? "))
+                   (y-or-n-p (format "No database for dictionary `%s'.  Download it now? " dictionary)))
               (progn
-                (gloss-setup-english)
+                (gloss-download-prebuilt-db dictionary)
                 (user-error "Download started (see buffer `*gloss setup*'); try again once it completes"))
             (error "No database for dictionary `%s'" dictionary)))
         (puthash dictionary (sqlite-open path) gloss--connections))))
@@ -217,7 +225,7 @@ Optional argument INTERACTIVE is non-nil for interactive calls."
                  (setq-local minibuffer-action
                              (cons (lambda (str)
                                      (gloss-describe-word str dict))
-                                   "define")))
+                                   "describe")))
              (completing-read
               (format-prompt "Word[%s]" def dict)
               (gloss--word-table dict) nil t nil
@@ -260,31 +268,62 @@ Intended for use in `completion-at-point-functions'."
      (when (and (< beg (point)) (<= (point) end))
        (list beg end (gloss--word-table) :exclusive 'no)))))
 
+(defun gloss--lang-code-to-flag (lc)
+  "Return a flag (as a string) corresponding to language code LC."
+  (when (equal lc "en") (setq lc "gb"))
+  (substring-no-properties
+   (compose-chars
+    (char-from-name
+     (concat "REGIONAL INDICATOR SYMBOL LETTER "
+             (string (upcase (aref lc 0)))))
+    (char-from-name
+     (concat "REGIONAL INDICATOR SYMBOL LETTER "
+             (string (upcase (aref lc 1))))))))
+
 ;;;###autoload
-(defun gloss-setup-english ()
-  "Download the pre-built English dictionary database.
-Fetches en.db from `gloss-english-db-url' into the gloss data directory."
-  (interactive)
-  (let ((curl (executable-find "curl")))
+(defun gloss-download-prebuilt-db (dictionary)
+  "Download the pre-built database for DICTIONARY.
+Fetches the database file from `gloss-prebuilt-db-urls' into the gloss
+data directory.  Interactively, prompt for DICTIONARY with completion."
+  (interactive
+   (list
+    (completing-read
+     (format-prompt "Dictionary" gloss-default-dictionary)
+     (completion-table-with-metadata
+      gloss-prebuilt-db-urls
+      `((affixation-function
+         . ,(lambda (cands)
+              (mapcar
+               (lambda (cand)
+                 (list cand (concat (gloss--lang-code-to-flag cand) " ") ""))
+               cands)))))
+     nil t nil nil gloss-default-dictionary)))
+  (let ((url (alist-get dictionary gloss-prebuilt-db-urls nil nil #'equal))
+        (curl (executable-find "curl")))
+    (unless url
+      (user-error "No pre-built database available for `%s'" dictionary))
     (unless curl
       (user-error "`curl' not found; download %s into %s manually"
-                  gloss-english-db-url gloss-data-directory))
+                  url gloss-data-directory))
     (make-directory gloss-data-directory t)
-    (message "Downloading English database (see buffer `*gloss setup*' for progress)...")
+    (message
+     "Downloading %s database (see buffer `*gloss setup*' for progress)..."
+     dictionary)
     (make-process
      :name "gloss-setup"
      :buffer "*gloss setup*"
      :command (list curl "-L" "-o"
-                    (expand-file-name "en.db" gloss-data-directory)
-                    gloss-english-db-url)
+                    (expand-file-name (concat dictionary ".db") gloss-data-directory)
+                    url)
      :filter (lambda (proc string)
                (with-current-buffer (process-buffer proc)
                  (insert (string-replace "\r" "\n" string))))
      :sentinel (lambda (proc _event)
                  (if (zerop (process-exit-status proc))
-                     (message "English database ready.")
-                   (message "gloss-setup-english failed; see buffer `%s' for details"
-                            (buffer-name (process-buffer proc))))))))
+                     (message "%s database ready." dictionary)
+                   (message
+                    "Pre-built DB download failed; see buffer `%s' for details"
+                    (buffer-name (process-buffer proc))))))))
 
 (provide 'gloss)
 ;;; gloss.el ends here
