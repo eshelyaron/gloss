@@ -86,26 +86,44 @@
                    (y-or-n-p (format "No database for dictionary `%s'.  Download it now? " dictionary)))
               (progn
                 (gloss-download-prebuilt-db dictionary)
-                (user-error "Download started (see buffer `*gloss setup*'); try again once it completes"))
+                (user-error "Download started; try again once it completes"))
             (error "No database for dictionary `%s'" dictionary)))
         (puthash dictionary (sqlite-open path) gloss--connections))))
 
 (defun gloss-dictionaries ()
   "Return a list of available dictionary names."
-  (mapcar #'file-name-base
-          (directory-files gloss-data-directory nil (rx ".db" eos))))
+  (when (file-directory-p gloss-data-directory)
+    (mapcar #'file-name-base
+            (directory-files gloss-data-directory nil (rx ".db" eos)))))
+
+(defun gloss--read-dictionary-for-download (&optional prompt)
+  (completing-read
+   (format-prompt (or prompt "Dictionary") gloss-default-dictionary)
+   (completion-table-with-metadata
+    gloss-prebuilt-db-urls
+    `((affixation-function
+       . ,(lambda (cands)
+            (mapcar
+             (lambda (cand)
+               (list cand (concat (gloss--lang-code-to-flag cand) " ") ""))
+             cands)))))
+   nil t nil nil gloss-default-dictionary))
 
 (defun gloss-read-dictionary (prompt)
   "Prompt for a dictionary name with PROMPT."
-  (completing-read
-   (format-prompt prompt gloss-default-dictionary)
-   (let ((table 'unset))
-     (lambda (str pred op)
-       (when (eq table 'unset)
-         (setq table (gloss-dictionaries)))
-       (complete-with-action op table str pred)))
-   nil t nil
-   'gloss-read-dictionary-history gloss-default-dictionary))
+  (let ((dicts (gloss-dictionaries)))
+    (unless dicts
+      (let ((dict (gloss--read-dictionary-for-download
+                   "No dictionaries available.  Download dictionary")))
+        (gloss-download-prebuilt-db dict)
+        (when (y-or-n-p
+               (format "Also set `%s' as the default dictionary?" dict))
+          (customize-save-variable 'gloss-default-dictionary dict))
+        (user-error "Download started; try again once it completes")))
+    (completing-read
+     (format-prompt prompt gloss-default-dictionary)
+     dicts nil t nil
+     'gloss-read-dictionary-history gloss-default-dictionary)))
 
 (defun gloss--word-table (&optional dictionary)
   "Return completion table for DICTIONARY."
@@ -287,17 +305,7 @@ Fetches the database file from `gloss-prebuilt-db-urls' into the gloss
 data directory.  Interactively, prompt for DICTIONARY with completion."
   (interactive
    (list
-    (completing-read
-     (format-prompt "Dictionary" gloss-default-dictionary)
-     (completion-table-with-metadata
-      gloss-prebuilt-db-urls
-      `((affixation-function
-         . ,(lambda (cands)
-              (mapcar
-               (lambda (cand)
-                 (list cand (concat (gloss--lang-code-to-flag cand) " ") ""))
-               cands)))))
-     nil t nil nil gloss-default-dictionary)))
+    (gloss--read-dictionary-for-download)))
   (let ((url (alist-get dictionary gloss-prebuilt-db-urls nil nil #'equal))
         (curl (executable-find "curl")))
     (unless url
@@ -307,23 +315,33 @@ data directory.  Interactively, prompt for DICTIONARY with completion."
                   url gloss-data-directory))
     (make-directory gloss-data-directory t)
     (message
-     "Downloading %s database (see buffer `*gloss setup*' for progress)..."
+     "Downloading %s database..."
      dictionary)
-    (make-process
-     :name "gloss-setup"
-     :buffer "*gloss setup*"
-     :command (list curl "-L" "-o"
-                    (expand-file-name (concat dictionary ".db") gloss-data-directory)
-                    url)
-     :filter (lambda (proc string)
-               (with-current-buffer (process-buffer proc)
-                 (insert (string-replace "\r" "\n" string))))
-     :sentinel (lambda (proc _event)
-                 (if (zerop (process-exit-status proc))
-                     (message "%s database ready." dictionary)
-                   (message
-                    "Pre-built DB download failed; see buffer `%s' for details"
-                    (buffer-name (process-buffer proc))))))))
+    (let ((buf (get-buffer-create (format "*gloss download %s*" dictionary))))
+      (with-current-buffer buf
+        (setq-local window-point-insertion-type t
+                    mode-line-process ":running"))
+      (setf (buffer-local-value 'window-point-insertion-type buf) t)
+      (display-buffer buf)
+      (make-process
+       :name "gloss-setup"
+       :buffer buf
+       :command (list curl "-L" "-o"
+                      (expand-file-name (concat dictionary ".db") gloss-data-directory)
+                      url)
+       :filter (lambda (proc string)
+                 (with-current-buffer (process-buffer proc)
+                   (insert (string-replace "\r" "\n" string))))
+       :sentinel (lambda (proc _event)
+                   (with-current-buffer (process-buffer proc)
+                     (setq-local
+                      mode-line-process
+                      (if (zerop (process-exit-status proc))
+                          (progn
+                            (message "Dictionary DB download complete")
+                            ":done")
+                        (message "Dictionary DB download failed!")
+                        ":failed"))))))))
 
 (provide 'gloss)
 ;;; gloss.el ends here
