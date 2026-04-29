@@ -207,7 +207,7 @@
   "Return words in DB that start with PREF and contain all of SUBS."
   (let* ((query (concat "SELECT word, hint FROM words WHERE word LIKE ?"
                         (string-join (make-list (length subs) " AND word LIKE ?"))
-                        " ORDER BY freq LIMIT ?"))
+                        " ORDER BY freq DESC LIMIT ?"))
          (rows (sqlite-select
                 db query
                 (cons
@@ -222,7 +222,7 @@
                  (propertize word 'hint (truncate-string-to-width hint 64 nil nil t))
                word)))
         (push annotated (if (string-prefix-p pref annotated) a b))))
-    (nconc a b)))
+    (nconc (nreverse a) (nreverse b))))
 
 (defun gloss--completions (pattern db)
   "Return completions for PATTERN from database DB.
