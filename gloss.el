@@ -263,6 +263,7 @@ Optional argument INTERACTIVE is non-nil for interactive calls."
               (gloss--word-table dict) nil t nil
               (intern (format "gloss-describe-word-%s-history" dict))
               def))))
+     (when current-prefix-arg (setq-local gloss-default-dictionary dict))
      (list word dict t)))
   (let* ((dictionary (or dictionary gloss-default-dictionary))
          (rows (sqlite-select
