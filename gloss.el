@@ -147,6 +147,10 @@
        (display-sort-function . identity)
        (cycle-sort-function . identity)))))
 
+(defcustom gloss-word-completions-limit 2048
+  "Maximum number of word completions to produce in a single dictionary query."
+  :type '(choice natnum (const :tag "No limit" nil)))
+
 (defun gloss--word-completions (word db)
   "Return completions for WORD from database DB."
   (mapcar
@@ -154,9 +158,19 @@
      (if (and hint (not (string-empty-p hint)))
          (propertize word 'hint (truncate-string-to-width hint 64 nil nil t))
        word))
-   (sqlite-select
-    db "SELECT word, hint FROM words WHERE word LIKE ? ORDER BY freq DESC"
-    (list (concat word "%")))))
+   (let* ((parts (split-string word split-string-default-separators))
+          (pref (car parts))
+          (subs (cdr parts)))
+     (sqlite-select
+      db
+      (concat "SELECT word, hint FROM words WHERE word LIKE ?"
+              (string-join (make-list (length subs) " AND word LIKE ?"))
+              " ORDER BY freq DESC LIMIT ?")
+      (cons
+       (concat pref "%")
+       (append
+        (mapcar (lambda (sub) (concat "%" sub "%")) subs)
+        (list (or gloss-word-completions-limit most-positive-fixnum))))))))
 
 (with-eval-after-load 'help-mode
   (define-button-type 'gloss-word-xref
