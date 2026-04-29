@@ -97,6 +97,7 @@
             (directory-files gloss-data-directory nil (rx ".db" eos)))))
 
 (defun gloss--read-dictionary-for-download (&optional prompt)
+  "Prompt with PROMPT for a dictionary to download."
   (completing-read
    (format-prompt (or prompt "Dictionary") gloss-default-dictionary)
    (completion-table-with-metadata
@@ -131,7 +132,7 @@
     (external-completion-table
      'gloss-word
      (lambda (pattern _point)
-       (gloss--word-completions pattern db))
+       (gloss--completions pattern db))
      `((affixation-function
         . ,(lambda (cs)
              (let ((max (seq-max (cons 0 (mapcar #'string-width cs)))))
@@ -187,6 +188,7 @@
   :type '(vector face))
 
 (defun gloss--highlight-completion (comp pref subs)
+  "Highlight completion candidate COMP according to PREF and SUBS."
   (let ((res (copy-sequence comp)))
     (add-face-text-property 0 (length pref) 'completions-common-part nil res)
     (let ((i 0)
@@ -200,7 +202,8 @@
         (setq i (1+ i))))
     res))
 
-(defun gloss--word-completions-1 (db pref subs)
+(defun gloss--completions-1 (db pref subs)
+  "Return words in DB that start with PREF and contain all of SUBS."
   (let* ((query (concat "SELECT word, hint FROM words WHERE word LIKE ?"
                         (string-join (make-list (length subs) " AND word LIKE ?"))
                         " ORDER BY freq LIMIT ?"))
@@ -220,13 +223,17 @@
         (push annotated (if (string-prefix-p pref annotated) a b))))
     (nconc a b)))
 
-(defun gloss--word-completions (word db)
-  "Return completions for WORD from database DB."
+(defun gloss--completions (pattern db)
+  "Return completions for PATTERN from database DB.
+
+PATTERN is split on whitespace: the first token is matched as a prefix
+of the candidate, and each subsequent token must appear as a substring
+anywhere in the candidate."
   (setq completion-lazy-hilit-fn nil)
-  (let* ((parts (split-string word split-string-default-separators))
+  (let* ((parts (split-string pattern split-string-default-separators))
          (pref (car parts))
          (subs (cdr parts))
-         (completions (gloss--word-completions-1 db pref subs)))
+         (completions (gloss--completions-1 db pref subs)))
     (if completion-lazy-hilit
         (progn
           (setq completion-lazy-hilit-fn
@@ -309,7 +316,15 @@ DICTIONARY defaults to `gloss-default-dictionary'.
 Interactively, prompt for WORD with frequency-ranked completion.
 With a prefix argument, also prompt for DICTIONARY.
 
-Optional argument INTERACTIVE is non-nil for interactive calls."
+During completion, the minibuffer input is split into space-separated
+tokens, all of which need to match for a candidate to appear.  The first
+token must match as a prefix, each additional token filters further to
+candidates that contain it as a substring anywhere in the word, in any
+order.  For example, typing \"e tor di\" matches \"editor\", but not
+\"director\" (which does not begin with \"e\").
+
+Optional argument INTERACTIVE is non-nil for interactive calls.
+Omit it when calling this function form Lisp."
   (interactive
    (let* ((dict (if current-prefix-arg
                     (gloss-read-dictionary "Dictionary")
