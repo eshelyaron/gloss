@@ -151,26 +151,87 @@
   "Maximum number of word completions to produce in a single dictionary query."
   :type '(choice natnum (const :tag "No limit" nil)))
 
-(defun gloss--word-completions (word db)
-  "Return completions for WORD from database DB."
+;; The `gloss-match-face-N' faces and `gloss-match-faces' are copied
+;; from the corresponding definitions in orderless.el
+;; (https://github.com/oantolin/orderless)
+(defface gloss-match-face-0
+  '((((class color) (min-colors 88) (background dark)) :foreground "#72a4ff")
+    (((class color) (min-colors 88) (background light)) :foreground "#223fbf")
+    (t :foreground "blue"))
+  "Face for matches of components numbered 0 mod 4.")
+
+(defface gloss-match-face-1
+  '((((class color) (min-colors 88) (background dark)) :foreground "#ed92f8")
+    (((class color) (min-colors 88) (background light)) :foreground "#8f0075")
+    (t :foreground "magenta"))
+  "Face for matches of components numbered 1 mod 4.")
+
+(defface gloss-match-face-2
+  '((((class color) (min-colors 88) (background dark)) :foreground "#90d800")
+    (((class color) (min-colors 88) (background light)) :foreground "#145a00")
+    (t :foreground "green"))
+  "Face for matches of components numbered 2 mod 4.")
+
+(defface gloss-match-face-3
+  '((((class color) (min-colors 88) (background dark)) :foreground "#f0ce43")
+    (((class color) (min-colors 88) (background light)) :foreground "#804000")
+    (t :foreground "yellow"))
+  "Face for matches of components numbered 3 mod 4.")
+
+(defcustom gloss-match-faces
+  [gloss-match-face-0
+   gloss-match-face-1
+   gloss-match-face-2
+   gloss-match-face-3]
+  "Vector of faces used (cyclically) for component matches."
+  :type '(vector face))
+
+(defun gloss--highlight-completion (comp pref subs)
+  (let ((res (copy-sequence comp)))
+    (add-face-text-property 0 (length pref) 'completions-common-part nil res)
+    (let ((i 0)
+          (n (length gloss-match-faces)))
+      (dolist (sub subs)
+        (when-let* ((pos (string-search sub res)))
+          (add-face-text-property
+           pos (+ pos (length sub))
+           (aref gloss-match-faces (mod i n))
+           nil res))
+        (setq i (1+ i))))
+    res))
+
+(defun gloss--word-completions-1 (db pref subs)
   (mapcar
    (pcase-lambda (`(,word ,hint))
      (if (and hint (not (string-empty-p hint)))
          (propertize word 'hint (truncate-string-to-width hint 64 nil nil t))
        word))
-   (let* ((parts (split-string word split-string-default-separators))
-          (pref (car parts))
-          (subs (cdr parts)))
-     (sqlite-select
-      db
-      (concat "SELECT word, hint FROM words WHERE word LIKE ?"
-              (string-join (make-list (length subs) " AND word LIKE ?"))
-              " ORDER BY freq DESC LIMIT ?")
-      (cons
-       (concat pref "%")
-       (append
-        (mapcar (lambda (sub) (concat "%" sub "%")) subs)
-        (list (or gloss-word-completions-limit most-positive-fixnum))))))))
+   (sqlite-select
+    db
+    (concat "SELECT word, hint FROM words WHERE word LIKE ?"
+            (string-join (make-list (length subs) " AND word LIKE ?"))
+            " ORDER BY freq DESC LIMIT ?")
+    (cons
+     (concat pref "%")
+     (append
+      (mapcar (lambda (sub) (concat "%" sub "%")) subs)
+      (list (or gloss-word-completions-limit most-positive-fixnum)))))))
+
+(defun gloss--word-completions (word db)
+  "Return completions for WORD from database DB."
+  (setq completion-lazy-hilit-fn nil)
+  (let* ((parts (split-string word split-string-default-separators))
+         (pref (car parts))
+         (subs (cdr parts))
+         (completions (gloss--word-completions-1 db pref subs)))
+    (if completion-lazy-hilit
+        (progn
+          (setq completion-lazy-hilit-fn
+                (lambda (comp) (gloss--highlight-completion comp pref subs)))
+          completions)
+      (mapcar
+       (lambda (comp) (gloss--highlight-completion comp pref subs))
+       completions))))
 
 (with-eval-after-load 'help-mode
   (define-button-type 'gloss-word-xref
