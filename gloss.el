@@ -51,8 +51,10 @@
   "Fast dictionary lookup and word completion."
   :group 'text)
 
-(defvar gloss-data-directory
-  (expand-file-name "gloss-data/" user-emacs-directory))
+(defcustom gloss-data-directory
+  (expand-file-name "gloss-data/" user-emacs-directory)
+  "Directory in which to put, and look for, dictionary databases."
+  :type 'directory)
 
 (defcustom gloss-default-dictionary "en"
   "Dictionary to use by default for definition lookup and word completion."
