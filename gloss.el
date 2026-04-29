@@ -201,21 +201,24 @@
     res))
 
 (defun gloss--word-completions-1 (db pref subs)
-  (mapcar
-   (pcase-lambda (`(,word ,hint))
-     (if (and hint (not (string-empty-p hint)))
-         (propertize word 'hint (truncate-string-to-width hint 64 nil nil t))
-       word))
-   (sqlite-select
-    db
-    (concat "SELECT word, hint FROM words WHERE word LIKE ?"
-            (string-join (make-list (length subs) " AND word LIKE ?"))
-            " ORDER BY freq DESC LIMIT ?")
-    (cons
-     (concat pref "%")
-     (append
-      (mapcar (lambda (sub) (concat "%" sub "%")) subs)
-      (list (or gloss-word-completions-limit most-positive-fixnum)))))))
+  (let* ((query (concat "SELECT word, hint FROM words WHERE word LIKE ?"
+                        (string-join (make-list (length subs) " AND word LIKE ?"))
+                        " ORDER BY freq LIMIT ?"))
+         (rows (sqlite-select
+                db query
+                (cons
+                 (concat pref "%")
+                 (append
+                  (mapcar (lambda (sub) (concat "%" sub "%")) subs)
+                  (list (or gloss-word-completions-limit most-positive-fixnum))))))
+         a b)
+    (pcase-dolist (`(,word ,hint) rows)
+      (let ((annotated
+             (if (and hint (not (string-empty-p hint)))
+                 (propertize word 'hint (truncate-string-to-width hint 64 nil nil t))
+               word)))
+        (push annotated (if (string-prefix-p pref annotated) a b))))
+    (nconc a b)))
 
 (defun gloss--word-completions (word db)
   "Return completions for WORD from database DB."
