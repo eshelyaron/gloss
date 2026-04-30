@@ -127,13 +127,15 @@
      dicts nil t nil
      'gloss-read-dictionary-history gloss-default-dictionary)))
 
-(defun gloss--word-table (&optional dictionary)
-  "Return completion table for DICTIONARY."
+(defun gloss--word-table (&optional dictionary inhibit-hints)
+  "Return completion table for DICTIONARY.
+
+Optional argument INHIBIT-HINTS non-nil says not to annotate completions."
   (let ((db (gloss--db (or dictionary gloss-default-dictionary))))
     (external-completion-table
      'gloss-word
      (lambda (pattern _point)
-       (gloss--completions pattern db))
+       (gloss--completions pattern db inhibit-hints))
      `((affixation-function
         . ,(lambda (cs)
              (let ((max (seq-max (cons 0 (mapcar #'string-width cs)))))
@@ -203,9 +205,13 @@
         (setq i (1+ i))))
     res))
 
-(defun gloss--completions-1 (db pref subs)
-  "Return words in DB that start with PREF and contain all of SUBS."
-  (let* ((query (concat "SELECT word, hint FROM words WHERE word LIKE ?"
+(defun gloss--completions-1 (db pref subs &optional inhibit-hints)
+  "Return words in DB that start with PREF and contain all of SUBS.
+
+Optional argument INHIBIT-HINTS non-nil says not to annotate words."
+  (let* ((query (concat "SELECT word"
+                        (unless inhibit-hints ", hint")
+                        " FROM words WHERE word LIKE ?"
                         (string-join (make-list (length subs) " AND word LIKE ?"))
                         " ORDER BY freq DESC LIMIT ?"))
          (rows (sqlite-select
@@ -224,17 +230,19 @@
         (push annotated (if (string-prefix-p pref annotated) a b))))
     (nconc (nreverse a) (nreverse b))))
 
-(defun gloss--completions (pattern db)
+(defun gloss--completions (pattern db &optional inhibit-hints)
   "Return completions for PATTERN from database DB.
 
 PATTERN is split on whitespace: the first token is matched as a prefix
 of the candidate, and each subsequent token must appear as a substring
-anywhere in the candidate."
+anywhere in the candidate.
+
+Optional argument INHIBIT-HINTS non-nil says not to annotate completions."
   (setq completion-lazy-hilit-fn nil)
   (let* ((parts (split-string pattern split-string-default-separators))
          (pref (car parts))
          (subs (cdr parts))
-         (completions (gloss--completions-1 db pref subs)))
+         (completions (gloss--completions-1 db pref subs inhibit-hints)))
     (if completion-lazy-hilit
         (progn
           (setq completion-lazy-hilit-fn
@@ -379,7 +387,10 @@ Intended for use in `completion-at-point-functions'."
   (pcase (bounds-of-thing-at-point 'word)
     (`(,beg . ,end)
      (when (and (< beg (point)) (<= (point) end))
-       (list beg end (gloss--word-table) :exclusive 'no)))))
+       (list beg end
+             (gloss--word-table
+              nil (bound-and-true-p completion-preview-is-calling))
+             :exclusive 'no)))))
 
 (defun gloss--lang-code-to-flag (lc)
   "Return a flag (as a string) corresponding to language code LC."
